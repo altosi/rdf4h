@@ -1,3 +1,4 @@
+```python
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -123,7 +124,7 @@ t_triples = try subjectWithPOL <|> blankNodePropertyListWithPOL
         *> optional t_predicateObjectList
         *> resetSubjectPredicate
 
--- [14]	blankNodePropertyList ::= '[' predicateObjectList ']'
+-- [14]\tblankNodePropertyList ::= '[' predicateObjectList ']'
 t_blankNodePropertyList :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m Node
 t_blankNodePropertyList = withConstantSubjectPredicate
   $ between (char '[') (char ']')
@@ -216,17 +217,20 @@ t_pname_ns = do
 t_pn_local :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m T.Text
 t_pn_local = do
   x <- t_pn_chars_u_str <|> string ":" <|> satisfy_str <|> t_plx
-  xs <- option "" $ try $ do
-    let recsve =
-          (t_pn_chars_str <|> string ":" <|> t_plx)
-            <|> (t_pn_chars_str <|> string ":" <|> t_plx <|> try (string "." <* lookAhead (try recsve)))
-            <|> (t_pn_chars_str <|> string ":" <|> t_plx <|> try (string "." *> notFollowedBy t_ws $> "."))
-    concat <$> many recsve
+  xs <- option "" $ recursivePNLocalComp
   pure (T.pack (x <> xs))
   where
     satisfy_str = pure <$> satisfy isDigit
     t_pn_chars_str = pure <$> t_pn_chars
     t_pn_chars_u_str = pure <$> t_pn_chars_u
+
+recursivePNLocalComp :: (MonadState ParseState m, CharParsing m) => m String
+recursivePNLocalComp = do
+  let recComp = option "" $ do
+        x <- (t_pn_chars_str <|> string ":" <|> t_plx <|> try (string "." <* lookAhead recComp))
+        xs <- recursivePNLocalComp
+        return (x <> xs)
+  recComp
 
 -- PERCENT | PN_LOCAL_ESC
 -- grammar rules: [169s] PLX
@@ -242,14 +246,14 @@ t_percent = sequence [char '%', t_hex, t_hex]
 
 -- grammar rules: [172s] PN_LOCAL_ESC
 t_pn_local_esc :: CharParsing m => m Char
-t_pn_local_esc = char '\\' *> oneOf "_~.-!$&'()*+,;=/?#@%"
+t_pn_local_esc = char '\' *> oneOf "_~.-!$&'()*+,;=/?#@%"
 
 -- grammar rules: [140s] PNAME_LN ::= PNAME_NS PN_LOCAL
 t_pname_ln :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m T.Text
 t_pname_ln = T.append <$> t_pname_ns <*> t_pn_local
 
 -- grammar rule: [10] subject
--- [10] subject	::= iri | BlankNode | collection
+-- [10] subject\t::= iri | BlankNode | collection
 t_subject :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m ()
 t_subject = iri <|> t_blankNode <|> t_collection >>= setSubject
   where
@@ -268,7 +272,7 @@ t_blankNode = do
       return $ BNodeGen (fromIntegral i)
     getExistingBN = return . BNodeGen . fromIntegral
 
--- TODO replicate the recursion technique from [168s] for ((..)* something)?
+
 -- [141s] BLANK_NODE_LABEL ::= '_:' (PN_CHARS_U | [0-9]) ((PN_CHARS | '.')* PN_CHARS)?
 t_blank_node_label :: (CharParsing m, MonadState ParseState m) => m String
 t_blank_node_label = do
@@ -304,7 +308,7 @@ t_objectList = do
   void $ many (try (many t_ws *> char ',' *> many t_ws *> t_object >>= addTripleForObject))
 
 -- grammar rule: [12] object
--- [12]	object ::= iri | BlankNode | collection | blankNodePropertyList | literal
+-- [12]\tobject ::= iri | BlankNode | collection | blankNodePropertyList | literal
 t_object :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m Node
 t_object =
   try (UNode <$> t_iri)
@@ -314,7 +318,7 @@ t_object =
     <|> t_literal
 
 -- grammar rule: [15] collection
--- [15]	collection ::= '(' object* ')'
+-- [15]\tcollection ::= '(' object* ')'
 t_collection :: (MonadState ParseState m, CharParsing m, LookAheadParsing m) => m Node
 t_collection = withConstantSubjectPredicate
   $ between (char '(') (char ')')
@@ -370,7 +374,7 @@ t_string =
     <|> try t_string_literal_double_quote
     <|> t_string_literal_single_quote
 
--- [22]	STRING_LITERAL_QUOTE
+-- [22]\tSTRING_LITERAL_QUOTE
 -- '"' ([^#x22#x5C#xA#xD] | ECHAR | UCHAR)* '"'
 t_string_literal_double_quote :: (CharParsing m, Monad m) => m T.Text
 t_string_literal_double_quote = nt_string_literal_quote
@@ -381,7 +385,7 @@ t_string_literal_single_quote :: (CharParsing m, Monad m) => m T.Text
 t_string_literal_single_quote = string_literal_quote '\''
 
 -- [24] STRING_LITERAL_LONG_SINGLE_QUOTE
--- "'''" (("'" | "''")? ([^'\] | ECHAR | UCHAR))* "'''"
+-- "'''" ("'" | "''")? ([^'\] | ECHAR | UCHAR))* "'''"
 t_string_literal_long_single_quote :: (CharParsing m, Monad m) => m T.Text
 t_string_literal_long_single_quote = between (string "'''") (string "'''") $ do
   ss <- many $ try $ do
@@ -393,9 +397,9 @@ t_string_literal_long_single_quote = between (string "'''") (string "'''") $ do
 -- [25] STRING_LITERAL_LONG_QUOTE
 -- '"""' (('"' | '""')? ([^"\] | ECHAR | UCHAR))* '"""'
 t_string_literal_long_double_quote :: (CharParsing m, Monad m) => m T.Text
-t_string_literal_long_double_quote = between (string "\"\"\"") (string "\"\"\"") $ do
+t_string_literal_long_double_quote = between (string """") (string """") $ do
   ss <- many $ try $ do
-    s1 <- T.pack <$> option "" (try (string "\"\"") <|> string "\"")
+    s1 <- T.pack <$> option "" (try (string """) <|> string """)
     s2 <- T.singleton <$> (noneOf ['"', '\\'] <|> t_echar <|> t_uchar)
     pure (s1 `T.append` s2)
   pure (T.concat ss)
@@ -404,11 +408,11 @@ t_string_literal_long_double_quote = between (string "\"\"\"") (string "\"\"\"")
 t_langtag :: (CharParsing m, Monad m) => m T.Text
 t_langtag = nt_langtag
 
--- [159s]	ECHAR
+-- [159s]\tECHAR
 t_echar :: (CharParsing m, Monad m) => m Char
 t_echar = nt_echar
 
--- [26]	UCHAR
+-- [26]\tUCHAR
 t_uchar :: (CharParsing m, Monad m) => m Char
 t_uchar = nt_uchar
 
@@ -448,7 +452,7 @@ t_double = do
 sign_parser :: CharParsing m => m String
 sign_parser = option "" (pure <$> oneOf "-+")
 
--- [20]	DECIMAL ::= [+-]? [0-9]* '.' [0-9]+
+-- [20]\tDECIMAL ::= [+-]? [0-9]* '.' [0-9]+
 t_decimal :: (CharParsing m, Monad m) => m T.Text
 t_decimal = try $ do
   sign <- sign_parser
@@ -486,7 +490,7 @@ t_pn_prefix = do
   r <- option "" (many (try t_pn_chars <|> char '.')) -- TODO: ensure t_pn_chars is last char
   pure (T.pack (i : r))
 
--- [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^`\] | UCHAR)* '>'
+-- [18] IRIREF ::= '<' ([^#x00-#x20<>"{}|^\\] | UCHAR)* '>'
 t_iriref :: (CharParsing m, MonadState ParseState m) => m T.Text
 t_iriref = between (char '<') (char '>') $ do
   iriFrag <- iriFragment
@@ -728,3 +732,5 @@ tryIriResolution mbUrl mdUrl iriFrag = tryIriResolution' mbUrl mdUrl
     tryIriResolution' _ (Just dIri) = either err pure (resolveIRI dIri iriFrag)
     tryIriResolution' _ _ = either err pure (resolveIRI mempty iriFrag)
     err m = unexpected $ mconcat ["Cannot resolve IRI: ", m, " ", show (mbUrl, mdUrl, iriFrag)]
+
+```
