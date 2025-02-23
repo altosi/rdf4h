@@ -24,10 +24,6 @@ tests :: String -> Manifest -> TestTree
 tests = runManifestTests . mfEntryToTest
 
 -- Functions to map manifest test entries to unit tests.
--- They are defined here to avoid cluttering W3C.Manifest
--- with functions that may not be needed to those who
--- just want to parse Manifest files.
--- TODO: They should probably be moved to W3C.Manifest after all.
 mfEntryToTest :: String -> TestEntry -> TestTree
 mfEntryToTest dir (TestXMLEval nm _ _ act res) =
   let pathExpected = getFilePath dir res
