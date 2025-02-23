@@ -1,3 +1,4 @@
+```haskell
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -68,13 +69,13 @@ graphTests testGroupName empty _mkRdf =
         (p_remove_triple_from_graph _mkRdf)
     , testProperty
         "remove_triple_from_singleton_graph_query_s"
-        (p_remove_triple_from_singleton_graph_query_s empty)
+        (p_remove_triple_from_singleton_graph_query empty queryS)
     , testProperty
         "remove_triple_from_singleton_graph_query_p"
-        (p_remove_triple_from_singleton_graph_query_p empty)
+        (p_remove_triple_from_singleton_graph_query empty queryP)
     , testProperty
         "remove_triple_from_singleton_graph_query_o"
-        (p_remove_triple_from_singleton_graph_query_o empty)
+        (p_remove_triple_from_singleton_graph_query empty queryO)
     , testProperty
         "p_add_then_remove_triples"
         (p_add_then_remove_triples empty)
@@ -273,7 +274,7 @@ p_query_match_po _unused = mk_query_match_fn same f
     same t1 t2 = samePred t1 t2 && sameObj t1 t2
     f t = (Nothing, Just $ predicateOf t, Just $ objectOf t)
 
-{-
+{--
  This function:
 
  1) creates a random RDF graph.
@@ -287,7 +288,7 @@ p_query_match_po _unused = mk_query_match_fn same f
     comparison function (sameSubj, samePred, sameObj).
  6) checks that all triples not returned by the query do not
     match the tripl comparison function.
--}
+--}
 mk_query_match_fn
   :: Rdf rdf
   => (Triple -> Triple -> Bool)
@@ -437,43 +438,24 @@ p_remove_triple_from_graph _mkRdf ts bUrl pms =
     f (Just tripleToBeRemoved) =
       p_remove_triple _mkRdf ts bUrl pms tripleToBeRemoved
 
--- TODO: refactor the following 3 functions.
-
--- |removing a triple from a graph that contained only that triple.
--- Performing a ((Just s) Nothing Nothing) query should return an
--- empty list.
-p_remove_triple_from_singleton_graph_query_s
+-- Combines redundancy in test functions for removing triples from singleton graph.
+p_remove_triple_from_singleton_graph_query
   :: (Rdf rdf)
-  => RDF rdf -> SingletonGraph rdf -> Bool
-p_remove_triple_from_singleton_graph_query_s _unused singletonGraph =
-  null (query newGr (Just s) Nothing Nothing)
+  => RDF rdf
+  -> (Triple -> (Maybe Node, Maybe Node, Maybe Node))
+  -> SingletonGraph rdf
+  -> Bool
+p_remove_triple_from_singleton_graph_query _unused mkPattern singletonGraph =
+  null (query newGr s p o)
   where
-    tripleInGraph@(Triple s _p _o) = head (triplesOf (rdfGraph singletonGraph))
+    tripleInGraph = head (triplesOf (rdfGraph singletonGraph))
     newGr = removeTriple (rdfGraph singletonGraph) tripleInGraph
+    (s, p, o) = mkPattern tripleInGraph
 
--- |removing a triple from a graph that contained only that triple.
--- Performing a (Nothing (Just p) Nothing) query should return an
--- empty list.
-p_remove_triple_from_singleton_graph_query_p
-  :: (Rdf rdf)
-  => RDF rdf -> SingletonGraph rdf -> Bool
-p_remove_triple_from_singleton_graph_query_p _unused singletonGraph =
-  null (query newGr Nothing (Just p) Nothing)
-  where
-    tripleInGraph@(Triple _s p _o) = head (triplesOf (rdfGraph singletonGraph))
-    newGr = removeTriple (rdfGraph singletonGraph) tripleInGraph
-
--- |removing a triple from a graph that contained only that triple.
--- Performing a (Nothing Nothing (Just o)) query should return an
--- empty list.
-p_remove_triple_from_singleton_graph_query_o
-  :: (Rdf rdf)
-  => RDF rdf -> SingletonGraph rdf -> Bool
-p_remove_triple_from_singleton_graph_query_o _unused singletonGraph =
-  null (query newGr Nothing Nothing (Just o))
-  where
-    tripleInGraph@(Triple _s _p o) = head (triplesOf (rdfGraph singletonGraph))
-    newGr = removeTriple (rdfGraph singletonGraph) tripleInGraph
+-- Query patterns for subject, predicate, object.
+queryS (Triple s _ _) = (Just s, Nothing, Nothing)
+queryP (Triple _ p _) = (Nothing, Just p, Nothing)
+queryO (Triple _ _ o) = (Nothing, Nothing, Just o)
 
 p_add_then_remove_triples
   :: (Rdf rdf)
@@ -650,4 +632,6 @@ p_reverseRdfTest _mkRdf =
       ]
     expected = "<file:///this/is/not/a/palindrome> \
                \<file:///this/is/not/a/palindrome> \
-               \\"literal string\" .\n"
+               \\"literal string\\" .\n"
+
+```
