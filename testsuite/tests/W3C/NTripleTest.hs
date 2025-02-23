@@ -23,11 +23,6 @@ testsParsec = runManifestTests (mfEntryToTest testParserParsec)
 testsAttoparsec :: Manifest -> TestTree
 testsAttoparsec = runManifestTests (mfEntryToTest testParserAttoparsec)
 
--- Functions to map manifest test entries to unit tests.
--- They are defined here to avoid cluttering W3C.Manifest
--- with functions that may not be needed to those who
--- just want to parse Manifest files.
--- TODO: They should probably be moved to W3C.Manifest after all.
 mfEntryToTest :: NTriplesParserCustom -> TestEntry -> TestTree
 mfEntryToTest testParser (TestNTriplesPositiveSyntax nm _ _ act') =
   let act = (UNode . fromJust . fileSchemeToFilePath) act'
