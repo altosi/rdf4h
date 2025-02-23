@@ -1,3 +1,4 @@
+
 {-# LANGUAGE OverloadedStrings #-}
 
 module W3C.Manifest (
@@ -27,39 +28,36 @@ data Manifest =
       entries :: [TestEntry]
     }
 
--- TODO: Fields `name` and `action` are mandatory for all tests,
--- `result` is mandatory for positive *Eval tests,
--- the rest are optional, so we should use "Maybe" for them.
 data TestEntry =
     TestTurtleEval {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node,
       result :: Node
     } |
     TestTurtleNegativeEval {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     } |
     TestTurtlePositiveSyntax {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     } |
     TestTurtleNegativeSyntax {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     } |
     PositiveEntailmentTest {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node,
       result :: Node,
       entailmentRegime :: T.Text,
@@ -69,7 +67,7 @@ data TestEntry =
     NegativeEntailmentTest {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node,
       result :: Node,
       entailmentRegime :: T.Text,
@@ -79,41 +77,38 @@ data TestEntry =
     TestXMLEval {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node,
       result :: Node
     } |
     TestXMLNegativeSyntax {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     } |
     TestNTriplesPositiveSyntax {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     } |
     TestNTriplesNegativeSyntax {
       name :: T.Text,
       comment :: T.Text,
-      approval :: Node,
+      approval :: Maybe Node,
       action :: Node
     }
     deriving (Show)
 
--- TODO: Perhaps these should be pulled from the manifest graph
 rdfType,rdfsComment,rdfsLabel,rdftApproval,rdfsApproval,mfName,mfManifest,mfAction,
   mfResult,mfEntries,mfEntailmentRegime,mfRecognizedDatatypes,mfUnrecognizedDatatypes :: Node
 
 rdfType = unode $ mkUri NS.rdf "type"
 rdfsComment = unode $ mkUri rdfs "comment"
 rdfsLabel = unode $ mkUri rdfs "label"
--- rdftTestTurtleEval = unode "http://www.w3.org/ns/rdftest#TestTurtleEval"
--- rdftTestTurtleNegativeEval = unode "http://www.w3.org/ns/rdftest#TestTurtleNegativeEval"
 rdftApproval = unode "http://www.w3.org/ns/rdftest#approval"
-rdfsApproval = unode $ mkUri rdfs "approval" -- FIXME: incorrect namespace "rdfs:approval" in rdf-mt/manifest.ttl, must be "rdft:approval"
+rdfsApproval = unode $ mkUri rdfs "approval"
 mfName = unode "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#name"
 mfManifest = unode "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#Manifest"
 mfAction = unode "http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#action"
@@ -133,10 +128,8 @@ loadManifest manifestPath baseIRI =
 rdfToManifest :: RDF TList -> Manifest
 rdfToManifest rdf = Manifest desc tpls
   where desc = lnodeText $ objectOf $ headDef (error ("query empty: subject mf:node & predicate mf:name in:\n\n" <> show (triplesOf rdf))) descNode
-        -- FIXME: Inconsistent use of nodes for describing the manifest (W3C bug)
         descNode = query rdf (Just manifestNode) (Just rdfsLabel) Nothing
                    <> query rdf (Just manifestNode) (Just mfName) Nothing
---        descNode = query rdf (Just manifestNode) (Just mfName) Nothing
         tpls = (rdfToTestEntry rdf) <$> rdfCollectionToList rdf collectionHead
         collectionHead = objectOf $ headDef (error "query: mf:node & mf:entries") $ query rdf (Just manifestNode) (Just mfEntries) Nothing
         manifestNode = headDef (error "manifestSubjectNodes yielding empty list") $ manifestSubjectNodes rdf
@@ -163,7 +156,7 @@ mkTestTurtleEval :: Triples -> TestEntry
 mkTestTurtleEval ts = TestTurtleEval {
                         name = lnodeText $ objectByPredicate mfName ts,
                         comment = lnodeText $ objectByPredicate rdfsComment ts,
-                        approval = objectByPredicate rdftApproval ts,
+                        approval = Just $ objectByPredicate rdftApproval ts,
                         action = objectByPredicate mfAction ts,
                         result = objectByPredicate mfResult ts
                       }
@@ -172,7 +165,7 @@ mkTestTurtleNegativeEval :: Triples -> TestEntry
 mkTestTurtleNegativeEval ts = TestTurtleNegativeEval {
                                 name = lnodeText $ objectByPredicate mfName ts,
                                 comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                approval = objectByPredicate rdftApproval ts,
+                                approval = Just $ objectByPredicate rdftApproval ts,
                                 action = objectByPredicate mfAction ts
                               }
 
@@ -180,7 +173,7 @@ mkTestTurtlePositiveSyntax :: Triples -> TestEntry
 mkTestTurtlePositiveSyntax ts = TestTurtlePositiveSyntax {
                                   name = lnodeText $ objectByPredicate mfName ts,
                                   comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                  approval = objectByPredicate rdftApproval ts,
+                                  approval = Just $ objectByPredicate rdftApproval ts,
                                   action = objectByPredicate mfAction ts
                                 }
 
@@ -188,7 +181,7 @@ mkTestTurtleNegativeSyntax :: Triples -> TestEntry
 mkTestTurtleNegativeSyntax ts = TestTurtleNegativeSyntax {
                                   name = lnodeText $ objectByPredicate mfName ts,
                                   comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                  approval = objectByPredicate rdftApproval ts,
+                                  approval = Just $ objectByPredicate rdftApproval ts,
                                   action = objectByPredicate mfAction ts
                                 }
 
@@ -196,9 +189,7 @@ mkPositiveEntailmentTest :: Triples -> RDF TList -> TestEntry
 mkPositiveEntailmentTest ts rdf = PositiveEntailmentTest {
                                     name = lnodeText $ objectByPredicate mfName ts,
                                     comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                    -- FIXME: incorrect namespace "rdfs:approval" in rdf-mt/manifest.ttl
-                                    -- approval = objectByPredicate rdftApproval ts,
-                                    approval = objectByPredicate rdfsApproval ts,
+                                    approval = Just $ objectByPredicate rdfsApproval ts,
                                     action = objectByPredicate mfAction ts,
                                     result = objectByPredicate mfResult ts,
                                     entailmentRegime = lnodeText $ objectByPredicate mfEntailmentRegime ts,
@@ -214,9 +205,7 @@ mkNegativeEntailmentTest :: Triples -> RDF TList -> TestEntry
 mkNegativeEntailmentTest ts rdf = NegativeEntailmentTest {
                                     name = lnodeText $ objectByPredicate mfName ts,
                                     comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                    -- FIXME: incorrect namespace "rdfs:approval" in rdf-mt/manifest.ttl
-                                    -- approval = objectByPredicate rdftApproval ts,
-                                    approval = objectByPredicate rdfsApproval ts,
+                                    approval = Just $ objectByPredicate rdfsApproval ts,
                                     action = objectByPredicate mfAction ts,
                                     result = objectByPredicate mfResult ts,
                                     entailmentRegime = lnodeText $ objectByPredicate mfEntailmentRegime ts,
@@ -232,9 +221,7 @@ mkTestXMLEval :: Triples -> TestEntry
 mkTestXMLEval ts = TestXMLEval {
                      name = lnodeText $ objectByPredicate mfName ts,
                      comment = lnodeText $ objectByPredicate rdfsComment ts,
-                     -- FIXME: incorrect namespace "rdfs:approval" in rdf-mt/manifest.ttl
-                     -- approval = objectByPredicate rdftApproval ts,
-                     approval = objectByPredicate rdfsApproval ts,
+                     approval = Just $ objectByPredicate rdfsApproval ts,
                      action = objectByPredicate mfAction ts,
                      result = objectByPredicate mfResult ts
                    }
@@ -243,9 +230,7 @@ mkTestXMLNegativeSyntax :: Triples -> TestEntry
 mkTestXMLNegativeSyntax ts = TestXMLNegativeSyntax {
                                name = lnodeText $ objectByPredicate mfName ts,
                                comment = lnodeText $ objectByPredicate rdfsComment ts,
-                               -- FIXME: incorrect namespace "rdfs:approval" in rdf-mt/manifest.ttl
-                               -- approval = objectByPredicate rdftApproval ts
-                               approval = objectByPredicate rdfsApproval ts,
+                               approval = Just $ objectByPredicate rdfsApproval ts,
                                action = objectByPredicate mfAction ts
                              }
 
@@ -253,7 +238,7 @@ mkTestNTriplesPositiveSyntax :: Triples -> TestEntry
 mkTestNTriplesPositiveSyntax ts = TestNTriplesPositiveSyntax {
                                     name = lnodeText $ objectByPredicate mfName ts,
                                     comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                    approval = objectByPredicate rdftApproval ts,
+                                    approval = Just $ objectByPredicate rdftApproval ts,
                                     action = objectByPredicate mfAction ts
                                   }
 
@@ -261,7 +246,7 @@ mkTestNTriplesNegativeSyntax :: Triples -> TestEntry
 mkTestNTriplesNegativeSyntax ts = TestNTriplesNegativeSyntax {
                                     name = lnodeText $ objectByPredicate mfName ts,
                                     comment = lnodeText $ objectByPredicate rdfsComment ts,
-                                    approval = objectByPredicate rdftApproval ts,
+                                    approval = Just $ objectByPredicate rdftApproval ts,
                                     action = objectByPredicate mfAction ts
                                   }
 
@@ -277,27 +262,12 @@ subjectNodes :: RDF TList -> [Object] -> [Subject]
 subjectNodes rdf = (fmap subjectOf) . concatMap queryType
   where queryType n = query rdf Nothing (Just rdfType) (Just n)
 
--- | Text of the literal node.
--- Note that it doesn't perform type conversion for TypedL.
--- TODO: Looks useful. Move it to RDF4H lib?
 lnodeText :: Node -> T.Text
 lnodeText (LNode(PlainL t)) = t
 lnodeText (LNode(PlainLL t _)) = t
 lnodeText (LNode(TypedL t _)) = t
 lnodeText _ = error "Not a literal node"
 
--- | Convert an RDF collection to a List of its objects.
--- | Given a list of RDF triples as shown:
--- |   <x> <collection> <c1>
--- |   <c1> <rdf:first> <i1>
--- |   <c1> <rdf:rest> <c2>
--- |   <c2> <rdf:first> <i2>
--- |   <c2> <rdf:rest> <rdf:nil>
--- | ... it extracts a list of nodes [i1, i2].
--- | First argument (`rdf`) is the RDF graph;
--- | second argument (`tip`) is the "collection head" (<c1> in the example above),
--- | (all triples with <rdf:first> and <rdf:rest> pairs).
--- TODO: Looks useful. Move it to RDF4H lib?
 rdfCollectionToList :: RDF TList -> Node -> [Node]
 rdfCollectionToList _ (UNode("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil")) = []
 rdfCollectionToList rdf tip = concatMap (tripleToList rdf) $ nextCollectionTriples rdf tip
