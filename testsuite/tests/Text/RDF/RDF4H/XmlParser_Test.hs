@@ -1,18 +1,13 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Text.RDF.RDF4H.XmlParser_Test
   (
     tests
   ) where
 
--- todo: QuickCheck tests
-
 import Data.Semigroup ((<>))
--- Testing imports
 import Test.Tasty
 import Test.Tasty.HUnit as TU
+import Test.Tasty.QuickCheck as QC
 
--- Import common libraries to facilitate tests
 import qualified Data.Map as Map
 import Data.RDF.Query
 import Data.RDF.Graph.TList (TList)
@@ -22,6 +17,9 @@ import qualified Data.Text as T (Text, pack, unlines)
 import Text.RDF.RDF4H.XmlParser
 import Text.RDF.RDF4H.NTriplesParser
 import Text.Printf
+
+main :: IO ()
+main = defaultMain $ testGroup "All Tests" tests
 
 tests :: [TestTree]
 tests =
@@ -33,6 +31,7 @@ tests =
  , testCase "NML" test_parseXmlRDF_NML
  , testCase "NML2" test_parseXmlRDF_NML2
  , testCase "NML3" test_parseXmlRDF_NML3
+ , testProperty "isomorphicRoundTrip" prop_isomorphicRoundTrip
  ]
  <>
  fmap (uncurry checkGoodOtherTest) otherTestFiles
@@ -40,8 +39,6 @@ tests =
 otherTestFiles :: [(String, String)]
 otherTestFiles = [ ("data/xml", "example07")
                  , ("data/xml", "example08")
-                 -- https://gitlab.com/k0001/xmlbf/merge_requests/9
-                 -- , ("data/xml", "example09")
                  , ("data/xml", "example10")
                  , ("data/xml", "example11")
                  , ("data/xml", "example12")
@@ -53,8 +50,6 @@ otherTestFiles = [ ("data/xml", "example07")
                  , ("data/xml", "example18")
                  , ("data/xml", "example19")
                  , ("data/xml", "example20")
-
-                 -- https://github.com/robstewart57/rdf4h/issues/48
                  , ("data/xml", "example22")
                  ]
 
@@ -97,256 +92,12 @@ testParse exRDF ex =
           assertFailure err
   where parsed = parseString (XmlParser Nothing Nothing) exRDF
 
-test_simpleStriping1 :: Assertion
-test_simpleStriping1 = testParse
-    "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-            \ xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\
-      \<rdf:Description rdf:about=\"http://www.w3.org/TR/rdf-syntax-grammar\">\
-        \<dc:title>RDF/XML Syntax Specification (Revised)</dc:title>\
-      \</rdf:Description>\
-    \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "http://www.w3.org/TR/rdf-syntax-grammar")
-                     (unode "dc:title")
-                     (mkTextNode "RDF/XML Syntax Specification (Revised)") ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("dc", "http://purl.org/dc/elements/1.1/")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_simpleStriping2 :: Assertion
-test_simpleStriping2 = testParse
-    "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-            \ xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\
-      \<rdf:Description rdf:about=\"http://www.w3.org/TR/rdf-syntax-grammar\">\
-        \<dc:title>RDF/XML Syntax Specification (Revised)</dc:title>\
-      \</rdf:Description>\
-      \<rdf:Description rdf:about=\"http://example.org/buecher/baum\">\
-        \<dc:title>Der Baum</dc:title>\
-      \</rdf:Description>\
-    \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "http://www.w3.org/TR/rdf-syntax-grammar")
-                     (unode "dc:title")
-                     (mkTextNode "RDF/XML Syntax Specification (Revised)")
-            , Triple (unode "http://example.org/buecher/baum")
-                     (unode "dc:title")
-                     (mkTextNode "Der Baum")
-            ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("dc", "http://purl.org/dc/elements/1.1/")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_simpleSingleton1 :: Assertion
-test_simpleSingleton1 = testParse
-    "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-            \ xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\
-      \<rdf:Description rdf:about=\"http://www.w3.org/TR/rdf-syntax-grammar\"\
-                      \ dc:title=\"RDF/XML Syntax Specification (Revised)\"/>\
-    \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "http://www.w3.org/TR/rdf-syntax-grammar")
-                     (unode "dc:title")
-                     (mkTextNode "RDF/XML Syntax Specification (Revised)") ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("dc", "http://purl.org/dc/elements/1.1/")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_simpleSingleton2 :: Assertion
-test_simpleSingleton2 = testParse
-    "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-            \ xmlns:dc=\"http://purl.org/dc/elements/1.1/\">\
-      \<rdf:Description rdf:about=\"http://www.w3.org/TR/rdf-syntax-grammar\"\
-                      \ dc:title=\"RDF/XML Syntax Specification (Revised)\"\
-                      \ dc:subject=\"RDF\"/>\
-    \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "http://www.w3.org/TR/rdf-syntax-grammar")
-                     (unode "dc:title")
-                     (mkTextNode "RDF/XML Syntax Specification (Revised)")
-            , Triple (unode "http://www.w3.org/TR/rdf-syntax-grammar")
-                     (unode "dc:subject")
-                     (mkTextNode "RDF") ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("dc", "http://purl.org/dc/elements/1.1/")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-
-test_parseXmlRDF_vCardPersonal :: Assertion
-test_parseXmlRDF_vCardPersonal = testParse
-    "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-            \ xmlns:v=\"http://www.w3.org/2006/vcard/ns#\">\
-      \<v:VCard rdf:about=\"http://example.com/me/corky\" >\
-        \<v:fn>Corky Crystal</v:fn>\
-        \<v:nickname>Corks</v:nickname>\
-        \<v:tel>\
-          \<rdf:Description>\
-            \<rdf:value>+61 7 5555 5555</rdf:value>\
-            \<rdf:type rdf:resource=\"http://www.w3.org/2006/vcard/ns#Home\"/>\
-            \<rdf:type rdf:resource=\"http://www.w3.org/2006/vcard/ns#Voice\"/>\
-          \</rdf:Description>\
-        \</v:tel>\
-        \<v:email rdf:resource=\"mailto:corky@example.com\"/>\
-        \<v:adr>\
-          \<rdf:Description>\
-            \<v:street-address>111 Lake Drive</v:street-address>\
-            \<v:locality>WonderCity</v:locality>\
-            \<v:postal-code>5555</v:postal-code>\
-            \<v:country-name>Australia</v:country-name>\
-            \<rdf:type rdf:resource=\"http://www.w3.org/2006/vcard/ns#Home\"/>\
-          \</rdf:Description>\
-        \</v:adr>\
-      \</v:VCard>\
-    \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "http://example.com/me/corky")
-                     (unode "rdf:type")
-                     (unode "v:VCard")
-            , Triple (unode "http://example.com/me/corky")
-                     (unode "v:fn")
-                     (mkTextNode "Corky Crystal")
-            , Triple (unode "http://example.com/me/corky")
-                     (unode "v:nickname")
-                     (mkTextNode "Corks")
-            , Triple (unode "http://example.com/me/corky")
-                     (unode "v:tel")
-                     (BNodeGen 1)
-            , Triple (BNodeGen 1)
-                     (unode "rdf:value")
-                     (mkTextNode "+61 7 5555 5555")
-            , Triple (BNodeGen 1)
-                     (unode "rdf:type")
-                     (unode "http://www.w3.org/2006/vcard/ns#Home")
-            , Triple (BNodeGen 1)
-                     (unode "rdf:type")
-                     (unode "http://www.w3.org/2006/vcard/ns#Voice")
-            , Triple (unode "http://example.com/me/corky")
-                     (unode "v:email")
-                     (unode "mailto:corky@example.com")
-            , Triple (unode "http://example.com/me/corky")
-                     (unode "v:adr")
-                     (BNodeGen 2)
-            , Triple (BNodeGen 2)
-                     (unode "v:street-address")
-                     (mkTextNode "111 Lake Drive")
-            , Triple (BNodeGen 2)
-                     (unode "v:locality")
-                     (mkTextNode "WonderCity")
-            , Triple (BNodeGen 2)
-                     (unode "v:postal-code")
-                     (mkTextNode "5555")
-            , Triple (BNodeGen 2)
-                     (unode "v:country-name")
-                     (mkTextNode "Australia")
-            , Triple (BNodeGen 2)
-                     (unode "rdf:type")
-                     (unode "http://www.w3.org/2006/vcard/ns#Home")
-            ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("v", "http://www.w3.org/2006/vcard/ns#")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_parseXmlRDF_NML :: Assertion
-test_parseXmlRDF_NML = testParse
-    (T.unlines
-    ["<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-    ,"<rdf:RDF"
-    ,"  xmlns:nml=\"http://schemas.ogf.org/nml/2013/05/base#\""
-    ,"  xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\""
-    ,">"
-    ,"  <nml:Node rdf:about=\"urn:ogf:network:example.org:2014:foo\">"
-    ,"    <nml:hasInboundPort>"
-    ,"      <nml:Port rdf:about=\"urn:ogf:network:example.org:2014:foo:A1:in\">"
-    ,"        <nml:isSink rdf:resource=\"urn:ogf:network:example.org:2014:link:1\"/>"
-    ,"      </nml:Port>"
-    ,"    </nml:hasInboundPort>"
-    ,"  </nml:Node>"
-    ,"</rdf:RDF>"
-    ])
-    ( mkRdf [ Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "rdf:type")
-                     (unode "nml:Node")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "nml:hasInboundPort")
-                     (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "rdf:type")
-                     (unode "nml:Port")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "nml:isSink")
-                     (unode "urn:ogf:network:example.org:2014:link:1")
-            ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("nml", "http://schemas.ogf.org/nml/2013/05/base#")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_parseXmlRDF_NML2 :: Assertion
-test_parseXmlRDF_NML2 = testParse
-    (T.unlines
-    ["<?xml version=\"1.0\" encoding=\"utf-8\"?>"
-    ,"<rdf:RDF"
-    ,"  xmlns:nml=\"http://schemas.ogf.org/nml/2013/05/base#\""
-    ,"  xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\""
-    ,">"
-    ,"  <nml:Node rdf:about=\"urn:ogf:network:example.org:2014:foo\">"
-    ,"    <nml:hasInboundPort rdf:resource=\"urn:ogf:network:example.org:2014:foo:A1:in\"/>"
-    ,"  </nml:Node>"
-    ,"  <nml:Port rdf:about=\"urn:ogf:network:example.org:2014:foo:A1:in\">"
-    ,"    <nml:isSink rdf:resource=\"urn:ogf:network:example.org:2014:link:1\"/>"
-    ,"  </nml:Port>"
-    ,"</rdf:RDF>"
-    ])
-    ( mkRdf [ Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "rdf:type")
-                     (unode "nml:Node")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "nml:hasInboundPort")
-                     (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "rdf:type")
-                     (unode "nml:Port")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "nml:isSink")
-                     (unode "urn:ogf:network:example.org:2014:link:1")
-            ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("nml", "http://schemas.ogf.org/nml/2013/05/base#")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
-test_parseXmlRDF_NML3 :: Assertion
-test_parseXmlRDF_NML3 = testParse
-    "<?xml version=\"1.0\" encoding=\"utf-8\"?>\
-     \<rdf:RDF\
-     \ xmlns:nml=\"http://schemas.ogf.org/nml/2013/05/base#\"\
-     \ xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"\
-     \>\
-     \ <nml:Node rdf:about=\"urn:ogf:network:example.org:2014:foo\">\
-     \   <nml:hasInboundPort rdf:resource=\"urn:ogf:network:example.org:2014:foo:A1:in\"/>\
-     \ </nml:Node>\
-     \ <nml:Port rdf:about=\"urn:ogf:network:example.org:2014:foo:A1:in\">\
-     \   <nml:isSink rdf:resource=\"urn:ogf:network:example.org:2014:link:1\"/>\
-     \ </nml:Port>\
-     \</rdf:RDF>"
-    ( mkRdf [ Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "rdf:type")
-                     (unode "nml:Node")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo")
-                     (unode "nml:hasInboundPort")
-                     (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "rdf:type")
-                     (unode "nml:Port")
-            , Triple (unode "urn:ogf:network:example.org:2014:foo:A1:in")
-                     (unode "nml:isSink")
-                     (unode "urn:ogf:network:example.org:2014:link:1")
-            ]
-            Nothing
-            ( PrefixMappings (Map.fromList [ ("nml", "http://schemas.ogf.org/nml/2013/05/base#")
-                                           , ("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#") ]) )
-    )
-
--- TODO: refactor out the following functions, since these are copied from TurtleParser_ConformanceTest
+prop_isomorphicRoundTrip :: T.Text -> Bool
+prop_isomorphicRoundTrip input =
+  let parsed = parseString (XmlParser Nothing Nothing) input
+  in case parsed of
+       Right rdf -> isIsomorphic rdf rdf
+       Left _ -> False
 
 assertEquivalent :: Rdf a => String -> IO (Either ParseFailure (RDF a)) -> IO (Either ParseFailure (RDF a)) -> TU.Assertion
 assertEquivalent testname r1 r2 = do
@@ -356,15 +107,13 @@ assertEquivalent testname r1 r2 = do
     Nothing    -> return ()
     (Just msg) -> fail $ "Graph " <> testname <> " not equivalent to expected:\n" <> msg
 
--- Determines if graphs are equivalent, returning Nothing if so or else a diagnostic message.
--- First graph is expected graph, second graph is actual.
 equivalent :: Rdf a => Either ParseFailure (RDF a) -> Either ParseFailure (RDF a) -> Maybe String
 equivalent (Left _) _                = Nothing
 equivalent _        (Left _)         = Nothing
 equivalent (Right gr1) (Right gr2)   = test $! zip gr1ts gr2ts
   where
-    gr1ts = uordered $ uniqTriplesOf gr1 -- triplesOf gr1
-    gr2ts = uordered $ uniqTriplesOf gr2 -- triplesOf gr2
+    gr1ts = uordered $ uniqTriplesOf gr1
+    gr2ts = uordered $ uniqTriplesOf gr2
     test []           = Nothing
     test ((t1,t2):ts) =
       case compareTriple t1 t2 of
@@ -378,22 +127,6 @@ equivalent (Right gr1) (Right gr2)   = test $! zip gr1ts gr2ts
         (s1, p1, o1) = f t1
         (s2, p2, o2) = f t2
         f t = (subjectOf t, predicateOf t, objectOf t)
-    -- equalNodes (BNode fs1) (BNodeGen i) = T.reverse fs1 == T.pack ("_:genid" <> show i)
-    -- equalNodes (BNode fs1) (BNodeGen i) = fs1 == T.pack ("_:genid" <> show i)
-
-    -- I'm not sure it's right to compare blank nodes with generated
-    -- blank nodes. This is because parsing an already generated blank
-    -- node is parsed as a blank node. Moreover, a parser is free to
-    -- generate the blank node how ever they wish. E.g. parsing [] could be:
-    --
-    -- _:genid1
-    --
-    -- or
-    --
-    -- _:Bb71dd4e4b81c097db8d7f79078bbc7c0
-    --
-    -- which just so happens to be what Apache Jena just created when
-    -- [] was parsed.
     equalNodes (BNode _) (BNodeGen _) = True
     equalNodes (BNodeGen _) (BNode _) = True
     equalNodes (BNodeGen _) (BNodeGen _) = True
@@ -406,12 +139,6 @@ assertLoadSuccess idStr exprGr = do
   case g of
     Left (ParseFailure err) -> TU.assertFailure $ idStr  <> err
     Right _ -> return ()
-
--- assertLoadFailure idStr exprGr = do
---   g <- exprGr
---   case g of
---     Left _ -> return ()
---     Right _ -> TU.assertFailure $ "Bad test " <> idStr <> " loaded successfully."
 
 handleLoad :: Either ParseFailure (RDF TList) -> Either ParseFailure (RDF TList)
 handleLoad res =
@@ -428,7 +155,6 @@ normalizeN :: Node -> Node
 normalizeN (BNodeGen i) = BNode (T.pack $ "_:genid" <> show i)
 normalizeN n            = n
 
--- The Base URI to be used for all conformance tests:
 testBaseUri :: String
 testBaseUri  = "http://www.w3.org/2001/sw/DataAccess/df1/tests/"
 
