@@ -1,12 +1,10 @@
+--- Imports and extensions
 {-# LANGUAGE Arrows #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
-
--- |An parser for the RDF/XML format
--- <http://www.w3.org/TR/REC-rdf-syntax/>.
 
 module Text.RDF.RDF4H.XmlParserHXT(
   XmlParserHXT(XmlParserHXT)
@@ -25,11 +23,12 @@ import Text.RDF.RDF4H.ParserUtils hiding (rdfType)
 import Data.RDF.IRI
 import Data.RDF.Types (Rdf,RDF,RdfParser(..),Node(BNodeGen),BaseUrl(..),Triple(..),Triples,Subject,Predicate,Object,PrefixMappings(..),ParseFailure(ParseFailure),mkRdf,lnode,plainL,plainLL,typedL,unode,bnode,unodeValidate)
 import Data.Text (Text)
-import qualified Data.Text as T -- (Text,pack,unpack)
+import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Text.XML.HXT.Core (ArrowXml,ArrowIf,XmlTree,IfThen((:->)),(>.),(>>.),first,neg,(<+>),expandURI,getName,getAttrValue,getAttrValue0,getAttrl,hasAttrValue,hasAttr,constA,choiceA,getChildren,ifA,arr2A,second,hasName,isElem,isWhiteSpace,xshow,listA,isA,isText,getText,this,unlistA,orElse,sattr,mkelem,xreadDoc,runSLA)
+import Test.QuickCheck
+import Control.Monad (void)
 
--- TODO: write QuickCheck tests for XmlParser instance for RdfParser.
 
 -- Useful HXT intro: http://adit.io/posts/2012-04-14-working_with_HTML_in_haskell.html
 
@@ -481,3 +480,37 @@ mkLiteralNode (LParseState _ Nothing _) content = (lnode . plainL . T.pack) cont
 mkBlankNode :: forall a b. (ArrowState GParseState a) => a b Node
 mkBlankNode = nextState (\gState -> gState { stateGenId = stateGenId gState + 1 })
     >>> arr (BNodeGen . stateGenId)
+
+
+-- QuickCheck Tests
+
+instance Arbitrary XmlParserHXT where
+  arbitrary = XmlParserHXT <$> arbitrary <*> arbitrary
+
+property_parseString :: String -> XmlParserHXT -> Property
+property_parseString s parser = ioProperty $ do
+  result <- evaluate (parseString parser s)
+  return $ case result of
+    Right _ -> property True
+    Left _ -> property False
+
+property_parseFile :: FilePath -> XmlParserHXT -> Property
+property_parseFile p parser = ioProperty $ do
+  result <- try (parseFile parser p)
+  return $ case result of
+    Right _ -> property True
+    Left _ -> property False
+
+property_parseURL :: String -> XmlParserHXT -> Property
+property_parseURL url parser = ioProperty $ do
+  result <- try (parseURL parser url)
+  return $ case result of
+    Right _ -> property True
+    Left _ -> property False
+
+-- Example test runner
+main :: IO ()
+main = do
+  void $ quickCheck property_parseString
+  void $ quickCheck property_parseFile
+  void $ quickCheck property_parseURL
