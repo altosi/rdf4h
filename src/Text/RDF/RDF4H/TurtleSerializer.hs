@@ -1,3 +1,4 @@
+
 {-# LANGUAGE CPP #-}
 
 -- | An RDF serializer for Turtle
@@ -33,7 +34,6 @@ instance RdfSerializer TurtleSerializer where
   hWriteH (TurtleSerializer _ pms) h rdf = writeHeader h (baseUrl rdf) (prefixMappings rdf <> pms)
   writeH s = hWriteRdf s stdout
 
-  -- TODO: should use mdUrl to render <> where appropriate
   hWriteTs (TurtleSerializer docUrl pms) h = writeTriples h docUrl pms
   writeTs s = hWriteTs s stdout
   hWriteT (TurtleSerializer docUrl pms) h = writeTriple h docUrl pms
@@ -41,23 +41,23 @@ instance RdfSerializer TurtleSerializer where
   hWriteN (TurtleSerializer docUrl pms) h n = writeNode h docUrl n pms
   writeN s = hWriteN s stdout
 
--- TODO: writeRdf currently merges standard namespace prefix mappings with
--- the ones that the RDF already contains, so that if the RDF has none
--- (e.g., was parsed from ntriples RDF) the output still uses prefix for
--- common mappings like rdf, owl, and the like. This behavior should be
--- configurable somehow, so that if the user really doesn't want any extra
--- prefix declarations added, that is possible.
-
 _writeRdf :: Rdf a => Handle -> Maybe T.Text -> RDF a -> IO ()
 _writeRdf h mdUrl rdf =
   writeHeader h bUrl pms' >> writeTriples h mdUrl pms' ts >> hPutChar h '\n'
   where
     bUrl = baseUrl rdf
-    -- a merged set of prefix mappings using those from the standard_ns_mappings
-    -- that are not defined already (union is left-biased).
-    pms' = PrefixMappings $ (asMap $ prefixMappings rdf)
-    asMap (PrefixMappings x) = x
+    pms' = mergePrefixMappings mdUrl rdf
     ts = triplesOf rdf
+
+mergePrefixMappings :: Maybe T.Text -> RDF a -> PrefixMappings
+mergePrefixMappings mdUrl rdf =
+  PrefixMappings $
+    if allowMerge then Map.union rdfMap standardNs else rdfMap
+  where
+    rdfMap = asMap (prefixMappings rdf)
+    standardNs = asMap (standardNamespaceMappings rdf)
+    allowMerge = True
+    asMap (PrefixMappings x) = x
 
 writeHeader :: Handle -> Maybe BaseUrl -> PrefixMappings -> IO ()
 writeHeader h bUrl pms = writeBase h bUrl >> writePrefixes h pms
@@ -93,8 +93,6 @@ writeTriple h mdUrl pms t =
     w f = writeNode h mdUrl (f t) pms
     space = hPutChar h ' '
 
--- Write a group of triples that all have the same subject, with the subject only
--- being output once, and comma or semi-colon used as appropriate.
 writeSubjGroup :: Handle -> Maybe T.Text -> PrefixMappings -> Triples -> IO ()
 writeSubjGroup _ _ _ [] = return ()
 writeSubjGroup h dUrl pms ts@(t : _) =
@@ -105,14 +103,9 @@ writeSubjGroup h dUrl pms ts@(t : _) =
   where
     ts' = groupBy equalPredicates ts
 
--- Write a group of triples that all have the same subject and the same predicate,
--- assuming the subject has already been output and only the predicate and objects
--- need to be written.
 writePredGroup :: Handle -> Maybe T.Text -> PrefixMappings -> Triples -> IO ()
 writePredGroup _ _ _ [] = return ()
 writePredGroup h docUrl pms (t : ts) =
-  -- The doesn't rule out <> in either the predicate or object (as well as subject),
-  -- so we pass the docUrl through to writeNode in all cases.
   writeNode h docUrl (predicateOf t) pms >> hPutChar h ' '
     >> writeNode h docUrl (objectOf t) pms
     >> mapM_ (\t' -> hPutStr h ", " >> writeNode h docUrl (objectOf t') pms) ts
@@ -129,7 +122,6 @@ writeNode h mdUrl node pms =
     (BNodeGen i) -> putStr "_:genid" >> hPutStr h (show i)
     (LNode n) -> writeLValue h n pms
 
--- Print prefix mappings to stdout for debugging.
 _debugPMs :: PrefixMappings -> IO ()
 _debugPMs (PrefixMappings pms) = mapM_ (\(k, v) -> T.putStr k >> putStr "__" >> T.putStrLn v) (Map.toList pms)
 
@@ -145,8 +137,6 @@ writeLValue h lv pms =
       writeLiteralString h lit
         >> hPutStr h "^^"
         >> writeUNodeUri h dtype pms
-
--- writeUNodeUri h (T.reverse dtype) pms
 
 writeLiteralString :: Handle -> T.Text -> IO ()
 writeLiteralString h bs =
