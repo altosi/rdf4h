@@ -1,3 +1,4 @@
+```haskell
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -5,8 +6,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
-
--- import Data.Semigroup ((<>))
 
 import Control.Monad
 import Data.Char (isLetter)
@@ -28,91 +27,73 @@ import System.Exit
 import System.IO
 import Text.Printf (hPrintf)
 
--- TODO: cleanup and refactor main and elsewhere in this module
-
 main :: IO ()
-main =
-  do
-    (opts, args) <- getArgs >>= compilerOpts
-    when
-      (Help `elem` opts)
-      (putStrLn (usageInfo header options) >> exitSuccess)
-    when
-      (null args)
-      ( ioError
-          ( userError
-              ("\n\n" <> "INPUT-URI required\n\n" <> usageInfo header options)
-          )
-      )
-    let debug = Debug `elem` opts
-        inputUri = head args
-        inputFormat = getWithDefault (InputFormat "turtle") opts
-        outputFormat = getWithDefault (OutputFormat "ntriples") opts
-        inputBaseUri = getInputBaseUri inputUri args opts
-        outputBaseUri = getWithDefault (OutputBaseUri inputBaseUri) opts
-    unless
-      (outputFormat == "ntriples" || outputFormat == "turtle")
-      ( hPrintf
-          stderr
-          ( "'"
-              <> outputFormat
-              <> "' is not a valid output format. Supported output formats are: ntriples, turtle\n"
-          )
-          >> exitWith (ExitFailure 1)
-      )
-    when
-      debug
-      ( hPrintf stderr "      INPUT-URI:  %s\n\n" inputUri
-          >> hPrintf stderr "   INPUT-FORMAT:  %s\n" inputFormat
-          >> hPrintf stderr " INPUT-BASE-URI:  %s\n\n" inputBaseUri
-          >> hPrintf stderr "  OUTPUT-FORMAT:  %s\n" outputFormat
-          >> hPrintf stderr "OUTPUT-BASE-URI:  %s\n\n" outputBaseUri
-      )
-    let mInputUri =
-          if inputBaseUri == "-"
-            then Nothing
-            else Just (BaseUrl (T.pack inputBaseUri))
-        docUri = Just $ T.pack inputUri
-        emptyPms = PrefixMappings Map.empty
-    case (inputFormat, isUri $ T.pack inputUri) of
-      ("turtle", True) ->
-        parseURL
-          (TurtleParser mInputUri docUri)
-          inputUri
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat docUri emptyPms res
-      ("turtle", False) ->
-        ( if inputUri /= "-"
-            then parseFile (TurtleParser mInputUri docUri) inputUri
-            else parseString (TurtleParser mInputUri docUri) <$> TIO.getContents
-        )
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat docUri emptyPms res
-      ("ntriples", True) ->
-        parseURL NTriplesParser inputUri
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat Nothing emptyPms res
-      ("ntriples", False) ->
-        ( if inputUri /= "-"
-            then parseFile NTriplesParser inputUri
-            else parseString NTriplesParser <$> TIO.getContents
-        )
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat Nothing emptyPms res
-      ("xml", True) ->
-        parseURL
-          (XmlParser mInputUri docUri)
-          inputUri
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat docUri emptyPms res
-      ("xml", False) ->
-        ( if inputUri /= "-"
-            then parseFile (XmlParser mInputUri docUri) inputUri
-            else parseString (XmlParser mInputUri docUri) <$> TIO.getContents
-        )
-          >>= \(res :: Either ParseFailure (RDF TList)) ->
-            write outputFormat docUri emptyPms res
-      (str, _) -> putStrLn ("Invalid format: " <> str) >> exitFailure
+main = do
+  (opts, args) <- getArgs >>= compilerOpts
+  handleHelp opts
+  validateArgs args opts
+  let (config, mInputUri, docUri, emptyPms) = initializeConfig args opts
+  processInputFormat config mInputUri docUri emptyPms
+
+handleHelp :: [Flag] -> IO ()
+handleHelp opts =
+  when (Help `elem` opts) $ putStrLn (usageInfo header options) >> exitSuccess
+
+validateArgs :: [String] -> [Flag] -> IO ()
+validateArgs args opts =
+  when (null args) $ ioError (userError ("\n\nINPUT-URI required\n\n" <> usageInfo header options))
+  unless (formatValid (getFormatOpt OutputFormat "ntriples" opts)) $ invalidFormatExit
+
+data Config = Config
+  { debug :: Bool,
+    inputUri :: String,
+    inputFormat :: String,
+    outputFormat :: String,
+    inputBaseUri :: String,
+    outputBaseUri :: String
+  }
+
+initializeConfig :: [String] -> [Flag] -> (Config, Maybe BaseUrl, Maybe T.Text, PrefixMappings)
+initializeConfig args opts =
+  let inputUri = head args
+      debug = Debug `elem` opts
+      inputFormat = getFormatOpt InputFormat "turtle" opts
+      outputFormat = getFormatOpt OutputFormat "ntriples" opts
+      inputBaseUri = getInputBaseUri inputUri args opts
+      outputBaseUri = getFormatOpt OutputBaseUri inputBaseUri opts
+      config = Config debug inputUri inputFormat outputFormat inputBaseUri outputBaseUri
+      mInputUri = if inputBaseUri == "-" then Nothing else Just (BaseUrl (T.pack inputBaseUri))
+      docUri = Just $ T.pack inputUri
+      emptyPms = PrefixMappings Map.empty
+  in (config, mInputUri, docUri, emptyPms)
+
+processInputFormat :: Config -> Maybe BaseUrl -> Maybe T.Text -> PrefixMappings -> IO ()
+processInputFormat config mInputUri docUri emptyPms =
+  case (inputFormat config, isUri $ T.pack (inputUri config)) of
+    ("turtle", True) ->
+      parseAndWrite TurtleParser mInputUri docUri inputUri emptyPms (outputFormat config)
+    ("turtle", False) ->
+      handleLocalInput (TurtleParser mInputUri docUri) config inputUri emptyPms
+    ("ntriples", True) ->
+      parseAndWrite NTriplesParser Nothing docUri (inputUri config) emptyPms (outputFormat config)
+    ("ntriples", False) ->
+      handleLocalInput NTriplesParser config (inputUri config) emptyPms
+    ("xml", True) ->
+      parseAndWrite (XmlParser mInputUri docUri) mInputUri docUri (inputUri config) emptyPms (outputFormat config)
+    ("xml", False) ->
+      handleLocalInput (XmlParser mInputUri docUri) config (inputUri config) emptyPms
+    (str, _) -> putStrLn ("Invalid format: " <> str) >> exitFailure
+
+handleLocalInput :: (forall a. Rdf a => [T.Text] -> Parser a) -> Config -> String -> PrefixMappings -> IO ()
+handleLocalInput parser config inputUri emptyPms = do
+  contents <- if inputUri /= "-"
+              then readFile inputUri
+              else TIO.getContents
+  parseAndWrite parser Nothing Nothing contents emptyPms (outputFormat config)
+
+parseAndWrite :: (Rdf a) => Parser a -> Maybe BaseUrl -> Maybe T.Text -> String -> PrefixMappings -> String -> IO ()
+parseAndWrite parser mInputUri docUri content emptyPms format =
+  parseURL parser content >>= write format docUri emptyPms
 
 write :: (Rdf a) => String -> Maybe T.Text -> PrefixMappings -> Either ParseFailure (RDF a) -> IO ()
 write format docUri pms res = case res of
@@ -122,39 +103,25 @@ write format docUri pms res = case res of
     doWriteRdf rdfG = case format of
       "turtle" -> writeRdf (TurtleSerializer docUri pms) rdfG
       "ntriples" -> writeRdf NTriplesSerializer rdfG
-      unknown -> error $ "Unknown output format: " <> unknown
+      _ -> error $ "Unknown output format: " <> format
 
--- Get the input base URI from the argument list or flags, using the
--- first string arg as the default if not found in string args (as
--- the second item in the list) or in the flags as an explicitly
--- selected flag. If the user submitted both a 2nd commandline arg
--- after the INPUT-URI and used the -I/--input-base-uri arg, then
--- the -I/--input-base-uri value is used and the 2nd commandline
--- arg is silently discarded.
 getInputBaseUri :: String -> [String] -> [Flag] -> String
 getInputBaseUri inputUri args flags =
   if null $ tail args
     then getWithDefault (InputBaseUri inputUri) flags
     else getWithDefault (InputBaseUri (head $ tail args)) flags
 
--- Determine if the bytestring represents a URI, which is currently
--- decided solely by checking for a colon in the string.
 isUri :: T.Text -> Bool
 isUri str = not (T.null post) && T.all isLetter pre
   where
     (pre, post) = T.break (== ':') str
 
--- Extract from the list of flags a flag of the same type as the first
--- flag argument, returning its string value; if there is no such flag,
--- return the string value of the first argument.
 getWithDefault :: Flag -> [Flag] -> String
 getWithDefault def args =
   case find (== def) args of
     Nothing -> strValue def
     Just val -> strValue val
 
--- Convert the flag to a string, which is only valid for flags that have
--- a string argument.
 strValue :: Flag -> String
 strValue (InputFormat s) = s
 strValue (InputBaseUri s) = s
@@ -162,29 +129,17 @@ strValue (OutputFormat s) = s
 strValue (OutputBaseUri s) = s
 strValue flag = error $ "No string value for flag: " <> show flag
 
--- The commandline arguments we accept. None are required.
-data Flag
-  = Help
-  | Debug
-  | InputFormat String
-  | InputBaseUri String
-  | OutputFormat String
-  | OutputBaseUri String
-  deriving (Show)
+formatValid :: String -> Bool
+formatValid fmt = fmt == "ntriples" || fmt == "turtle"
 
--- Two flags are equal if they are of the same type, regardless of value: a
--- strange definition, but we never care about values when finding or comparing
--- them.
-instance Eq Flag where
-  Help == Help = True
-  Debug == Debug = True
-  InputFormat _ == InputFormat _ = True
-  InputBaseUri _ == InputBaseUri _ = True
-  OutputFormat _ == OutputFormat _ = True
-  OutputBaseUri _ == OutputBaseUri _ = True
-  _ == _ = False
+invalidFormatExit :: IO ()
+invalidFormatExit = hPrintf stderr "Invalid output format. Supported output formats are: ntriples, turtle\n" >> exitWith (ExitFailure 1)
 
--- The top part of the usage output.
+getFormatOpt :: (String -> Flag) -> String -> [Flag] -> String
+getFormatOpt constructor defaultStr opts = case find (== constructor defaultStr) opts of
+  Just (constructor str) -> str
+  _ -> defaultStr
+
 header :: String
 header =
   "\nrdf4h_parse: an RDF parser and serializer\n\n"
@@ -220,3 +175,4 @@ compilerOpts argv =
   case getOpt Permute options argv of
     (o, n, []) -> return (o, n)
     (_, _, errs) -> ioError (userError ("\n\n" <> concat errs <> usageInfo header options))
+```
